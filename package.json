@@ -1,0 +1,29 @@
+{
+  "name": "vite-plugin-map-pluss",
+  "version": "1.0.0",
+  "description": "A simpleVite plugin for MPA (Multi-Page Application), EJS template support and cache use.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/qingniao99/vite-plugin-mpa-plus.git"
+  },
+  "keywords": [
+    "vite",
+    "mpa",
+    "ejs"
+  ],
+  "author": "qingniao99",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/qingniao99/vite-plugin-mpa-plus/issues"
+  },
+  "homepage": "https://github.com/qingniao99/vite-plugin-mpa-plus#readme",
+  "devDependencies": {
+    "chalk": "^5.4.1",
+    "ejs": "^3.1.10",
+    "vite": "^7.0.0"
+  }
+}
