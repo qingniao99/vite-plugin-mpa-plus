@@ -1,5 +1,5 @@
 {
-  "name": "vite-plugin-map-pluss",
+  "name": "vite-plugin-mpa-pluss",
   "version": "1.0.0",
   "description": "A simpleVite plugin for MPA (Multi-Page Application), EJS template support and cache use.",
   "main": "index.js",
