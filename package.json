@@ -1,6 +1,6 @@
 {
   "name": "vite-plugin-mpa-pluss",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A simpleVite plugin for MPA (Multi-Page Application), EJS template support and cache use.",
   "main": "index.js",
   "scripts": {
@@ -21,7 +21,7 @@
     "url": "https://github.com/qingniao99/vite-plugin-mpa-plus/issues"
   },
   "homepage": "https://github.com/qingniao99/vite-plugin-mpa-plus#readme",
-  "devDependencies": {
+  "dependencies": {
     "chalk": "^5.4.1",
     "ejs": "^3.1.10",
     "vite": "^7.0.0"
