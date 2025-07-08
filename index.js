@@ -586,7 +586,10 @@ export function viteMpa(options = {}) {
             // 注入入口脚本
             if (viteConfig && viteConfig.root && matchedPage.entry) {
               const entryPath = normalizePath(relative(viteConfig.root, matchedPage.entry))
-              const entryScript = `<script type="module" src="/${entryPath}"></script>`
+              // 添加 base 路径前缀
+              const base = viteConfig.base || '/'
+              const entryUrl = `${base.endsWith('/') ? base : base + '/'}${entryPath}`
+              const entryScript = `<script type="module" src="${entryUrl}"></script>`
               const finalHtml = html.replace('</body>', `${entryScript}\n</body>`)
 
               res.writeHead(200, { 'Content-Type': 'text/html' })
