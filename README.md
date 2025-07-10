@@ -13,6 +13,7 @@
 - 🔥 **开发服务器增强** - 内置虚拟路由系统
 - ✨ **EJS模板引擎** - 支持动态模板渲染
 - 📝 **详细日志系统** - 可配置的详细调试输出
+- 🚀 **页面信息注入** - 可将页面入口文件的兄弟info.json注入到模板中
 
 ## 安装
 
@@ -74,6 +75,7 @@ src/
   pages/
     index/          # 首页
       index.js      # 入口文件(必需)
+      info.json     # 页面信息(可选)
       index.html    # 页面模板(可选)
     about/          # 关于页
       main.js       # 入口文件
@@ -130,7 +132,7 @@ dist/
 <!DOCTYPE html>
 <html>
 <head>
-  <title><%= title %></title>
+  <title><%= info.title %></title>
   <meta name="description" content="<%= description %>">
 </head>
 <body>

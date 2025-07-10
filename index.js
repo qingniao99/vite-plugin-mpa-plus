@@ -85,7 +85,7 @@ export function viteMpa(options = {}) {
     try {
       const result = await ejs.render(template, {
         ...defaultData,
-        ...(data || {})
+        info: data || {}
       }, ejsOptions)
 
       compiledTemplateCache.set(cacheKey, result)
@@ -168,13 +168,19 @@ export function viteMpa(options = {}) {
               pageTemplate = null
             }
 
+            const infoPath = resolve(fullPath, 'info.json')
+            let info = {}
+            if (existsSync(infoPath)) {
+              log.debug(`Found info.json: ${infoPath}`)
+              info = JSON.parse(await fs.readFile(infoPath, 'utf-8'))
+            }
+
             result[pagePath] = {
               name: pagePath,
               entry: entryFile,
               template: pageTemplate,
               filename: `${pagePath}.html`,
-              data: {
-              }
+              data: info
             }
 
             log.info(`Found page: ${pagePath}, entry: ${entryFile}, template: ${pageTemplate || 'default'}`)
