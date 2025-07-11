@@ -615,17 +615,14 @@ export function viteMpa(options = {}) {
       })
 
       server.middlewares.use(async (req, res, next) => {
-        if (req.url === '/__mpa_pages') {
+        if (req.url === '/') {
           log.debug('Serving pages list endpoint')
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({
-            pages: Object.keys(pages),
-            config: {
-              pagesDir,
-              template,
-              nested
-            }
-          }))
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+          for (const filename in pages) {
+            const { title } = pages[filename];
+            res.write(`<a target="_self" href="${filename}.html">${title || filename}</a><br/>`);
+          }
+          res.end();
           return
         }
         next()

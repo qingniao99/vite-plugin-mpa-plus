@@ -97,18 +97,8 @@ src/
 
 ### 开发API端点
 
-访问 `/__mpa_pages` 可获取所有页面信息：
+访问 `/` 可获取所有页面入口
 
-```json
-{
-  "pages": ["index", "about", "blog/post"],
-  "config": {
-    "pagesDir": "src/pages",
-    "template": "index.html",
-    "nested": true
-  }
-}
-```
 
 ## 构建模式
 
