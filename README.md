@@ -50,6 +50,7 @@ export default defineConfig({
 | `ejsOptions` | object | {} | EJS模板引擎配置 |
 | `verbose` | boolean | false | 是否显示详细日志 |
 | `nested` | boolean | true | 是否扫描嵌套目录 |
+| `openAuto` | boolean | true | 是否在启动开发服务器时自动打开浏览器 |
 
 ### 完整配置示例
 

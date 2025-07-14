@@ -1,6 +1,7 @@
 import { resolve, relative, dirname } from 'path'
 import fs from 'fs/promises'
 import { existsSync } from 'fs'
+import os from 'os'
 import { createRequire } from 'module'
 import process from 'process'
 import ejs from 'ejs'
@@ -12,6 +13,18 @@ const PLUGIN_NAME = 'vite-plugin-mpa-plus'
 
 const templateCache = new Map()
 const compiledTemplateCache = new Map()
+
+function getLocalIP() {
+  const interfaces = os.networkInterfaces()
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address
+      }
+    }
+  }
+  return 'localhost'
+}
 
 /**
  * 多页面应用插件
@@ -31,7 +44,8 @@ export function viteMpa(options = {}) {
     defaultData = {},
     ejsOptions = {},
     verbose = false,
-    nested = true
+    nested = true,
+    openAuto = true
   } = options
 
   let viteConfig = null
@@ -627,7 +641,19 @@ export function viteMpa(options = {}) {
         }
         next()
       })
-
+      if (openAuto) {
+        if (!global.__OPENED__) {
+          global.__OPENED__ = true
+          setTimeout(() => {
+            const url = `http://${getLocalIP()}:${server.config.server.port}/`
+            require('child_process').exec(
+              process.platform === 'win32'
+                ? `start ${url}`
+                : `open ${url}`
+            )
+          }, 1000)
+        }
+      }
       log.info('Dev server configured with virtual routing')
     },
 
