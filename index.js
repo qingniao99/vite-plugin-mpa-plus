@@ -49,6 +49,7 @@ export function viteMpa(options = {}) {
   } = options
 
   let viteConfig = null
+  let devServer = null
   let pages = {}
   let tempFiles = []
 
@@ -442,7 +443,22 @@ export function viteMpa(options = {}) {
       }
 
       // 编译模板
-      const html = await compileTemplate(templateContent, page.data)
+      let html = await compileTemplate(templateContent, page.data)
+
+      if (viteConfig && viteConfig.__htmlTransforms) {
+        for (const transformer of viteConfig.__htmlTransforms) {
+          try {
+            html = await transformer.transform(html, {
+              server: devServer,     
+              config: viteConfig,   
+              page: page  
+            });
+          } catch (error) {
+            console.error(`Error in ${transformer.name}:`, error);
+          }
+        }
+      }
+
       return html
     } catch (err) {
       log.error(`Failed to generate HTML for page: ${err.message}`)
@@ -568,7 +584,7 @@ export function viteMpa(options = {}) {
         log.error('Server is undefined')
         return
       }
-
+      devServer = server
       server.middlewares.use(async (req, res, next) => {
         const url = req.url || ''
         const urlPath = url.split('?')[0].split('#')[0]
