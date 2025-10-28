@@ -301,7 +301,7 @@ export function viteMpa(options = {}) {
     }
 
     log.info(`Creating temp HTML files in root: ${root}`)
-    const tempDir = resolve(root, '.mpa-temp')
+    const tempDir = resolve(root, 'node_modules', '.mpa-temp')
     log.debug(`Temp directory: ${tempDir}`)
     const inputs = {}
 
@@ -436,7 +436,7 @@ export function viteMpa(options = {}) {
 
     try {
       if (viteConfig && viteConfig.root) {
-        const tempDir = resolve(viteConfig.root, '.mpa-temp')
+        const tempDir = resolve(viteConfig.root, 'node_modules', '.mpa-temp')
         if (existsSync(tempDir)) {
           log.debug(`Deleting temp directory: ${tempDir}`)
           await fs.rm(tempDir, { recursive: true, force: true })
@@ -580,7 +580,7 @@ export function viteMpa(options = {}) {
         if (inputCount === 0) {
           log.warn('No inputs created, creating fallback entry')
 
-          const tempDir = resolve(root, '.mpa-temp')
+          const tempDir = resolve(root, 'node_modules', '.mpa-temp')
           if (!existsSync(tempDir)) {
             await fs.mkdir(tempDir, { recursive: true })
           }
@@ -755,7 +755,7 @@ export function viteMpa(options = {}) {
         log.info(`Processing HTML files in output directory: ${outputDirPath}`)
 
         try {
-          const tempDirInOutput = resolve(outputDirPath, '.mpa-temp')
+          const tempDirInOutput = resolve(outputDirPath, 'node_modules', '.mpa-temp')
 
           if (existsSync(tempDirInOutput)) {
             log.info('Found .mpa-temp directory in output, moving files to correct locations')
