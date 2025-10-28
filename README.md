@@ -51,6 +51,7 @@ export default defineConfig({
 | `verbose` | boolean | false | 是否显示详细日志 |
 | `nested` | boolean | true | 是否扫描嵌套目录 |
 | `openAuto` | boolean | true | 是否在启动开发服务器时自动打开浏览器 |
+| `outputDir` | string\|function | null | 自定义输出目录结构（仅构建模式） |
 
 ### 完整配置示例
 
@@ -63,7 +64,9 @@ mpa({
   ejsOptions: {
   },
   verbose: false,
-  nested: true
+  nested: true,
+  // 自定义输出目录结构
+  outputDir: 'pages/{name}' // 或使用函数: (pageName, pageInfo) => `custom/${pageName}`
 })
 ```
 
@@ -103,6 +106,8 @@ src/
 
 ## 构建模式
 
+### 默认输出结构
+
 构建输出会保持原始目录结构：
 
 ```
@@ -112,6 +117,60 @@ dist/
   blog/
     post.html
 ```
+
+### 自定义输出目录 (outputDir)
+
+使用 `outputDir` 配置可以自定义页面的输出目录结构：
+
+#### 字符串模板方式
+
+```javascript
+mpa({
+  outputDir: 'pages/{name}', // 所有页面放在 pages 目录下
+  // 或指定具体文件名
+  outputDir: '{name}/index', // home.html -> home/index.html
+  outputDir: '{basename}/main' // user/profile.html -> profile/main.html
+})
+```
+
+支持的模板变量：
+- `{name}`: 完整页面名称 (如 `user/profile`)
+- `{dir}`: 页面目录 (如 `user`)  
+- `{basename}`: 页面基础名称 (如 `profile`)
+
+#### 函数方式
+
+```javascript
+mpa({
+  outputDir: (pageName, pageInfo) => {
+    if (pageName === 'home') {
+      return 'home/index' // home.html -> home/index.html
+    }
+    if (pageName.startsWith('admin/')) {
+      return `admin/${pageName.replace('admin/', '')}/main`
+    }
+    return `pages/${pageName}`
+  }
+})
+```
+
+#### 输出示例
+
+使用 `outputDir: 'pages/{name}'` 的构建输出：
+
+```
+dist/
+  pages/
+    index.html
+    about.html
+    blog/
+      post.html
+```
+
+**注意**: 
+- `outputDir` 配置只在构建模式下生效，开发模式下会被忽略
+- 插件会自动处理静态资源路径，确保在自定义目录结构下资源引用正常工作
+- 开发服务器仍然使用原始的页面路由（如 `/user/profile`）
 
 ## 高级用法
 

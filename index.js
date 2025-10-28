@@ -35,6 +35,7 @@ function getLocalIP() {
  * @param {Object} options.ejsOptions EJS 选项
  * @param {boolean} options.verbose 是否输出详细日志
  * @param {boolean} options.nested 是否支持嵌套目录
+ * @param {string|Function} options.outputDir 输出目录结构配置
  * @returns {Object} Vite 插件
  */
 export function viteMpa(options = {}) {
@@ -45,7 +46,8 @@ export function viteMpa(options = {}) {
     ejsOptions = {},
     verbose = false,
     nested = true,
-    openAuto = true
+    openAuto = true,
+    outputDir = null
   } = options
 
   let viteConfig = null
@@ -59,6 +61,27 @@ export function viteMpa(options = {}) {
     error: (msg) => verbose && console.error(`${chalk.red('[MPA]')} ${msg}`),
     warn: (msg) => verbose && console.warn(`${chalk.yellow('[MPA]')} ${msg}`),
     debug: (msg) => verbose && console.log(`${chalk.gray('[MPA-DEBUG]')} ${msg}`)
+  }
+
+  function getOutputPath(pageName, pageInfo, isBuildMode = false) {
+    if (!outputDir || !isBuildMode) {
+      return `${pageName}.html`
+    }
+
+    if (typeof outputDir === 'function') {
+      const result = outputDir(pageName, pageInfo)
+      return result.endsWith('.html') ? result : `${result}.html`
+    }
+
+    if (typeof outputDir === 'string') {
+      let path = outputDir
+        .replace(/\{name\}/g, pageName)
+        .replace(/\{dir\}/g, dirname(pageName) === '.' ? '' : dirname(pageName))
+        .replace(/\{basename\}/g, pageName.split('/').pop())
+      return path.endsWith('.html') ? path : `${path}.html`
+    }
+
+    return `${pageName}.html`
   }
 
   async function getTemplate(templatePath) {
@@ -98,7 +121,7 @@ export function viteMpa(options = {}) {
     }
 
     try {
-      const result = await ejs.render(template, {
+      const result = ejs.render(template, {
         ...defaultData,
         info: data || {}
       }, ejsOptions)
@@ -133,7 +156,7 @@ export function viteMpa(options = {}) {
     return null
   }
 
-  async function scanDir(dir, basePath = '', root) {
+  async function scanDir(dir, basePath = '', root, isBuildMode = false) {
     if (!dir || !root) {
       log.error(`Invalid directory path: ${dir} or root: ${root}`)
       return {}
@@ -190,11 +213,13 @@ export function viteMpa(options = {}) {
               info = JSON.parse(await fs.readFile(infoPath, 'utf-8'))
             }
 
+            const outputPath = getOutputPath(pagePath, { entry: entryFile, template: pageTemplate, data: info }, isBuildMode)
+
             result[pagePath] = {
               name: pagePath,
               entry: entryFile,
               template: pageTemplate,
-              filename: `${pagePath}.html`,
+              filename: outputPath,
               data: info
             }
 
@@ -208,7 +233,8 @@ export function viteMpa(options = {}) {
             const nestedPages = await scanDir(
               fullPath,
               basePath ? `${basePath}/${entry}` : entry,
-              root
+              root,
+              isBuildMode
             )
 
             const nestedPageCount = Object.keys(nestedPages).length
@@ -230,7 +256,7 @@ export function viteMpa(options = {}) {
     return result
   }
 
-  async function scanPages(root) {
+  async function scanPages(root, isBuildMode = false) {
     if (!root) {
       log.error('Root directory is undefined')
       return {}
@@ -247,7 +273,7 @@ export function viteMpa(options = {}) {
 
     try {
       log.debug(`Starting directory scan: ${fullPagesDir}`)
-      const result = await scanDir(fullPagesDir, '', root)
+      const result = await scanDir(fullPagesDir, '', root, isBuildMode)
       const pageCount = Object.keys(result).length
 
       if (pageCount > 0) {
@@ -357,13 +383,34 @@ export function viteMpa(options = {}) {
         if (page.entry) {
           const entryPath = normalizePath(relative(root, page.entry))
           log.debug(`Injecting entry script: ${entryPath} for page: ${name}`)
-          const entryScript = `<script type="module" src="/${entryPath}"></script>`
+
+          // 只有在使用了 outputDir 且页面在子目录时才计算相对路径
+          let entryScript
+          if (outputDir && page.filename.includes('/')) {
+            const pageDepth = page.filename.split('/').length - 1
+            const relativePath = pageDepth > 0 ? '../'.repeat(pageDepth) : './'
+            entryScript = `<script type="module" src="${relativePath}${entryPath}"></script>`
+          } else {
+            entryScript = `<script type="module" src="/${entryPath}"></script>`
+          }
 
           if (finalHtml.includes('</body>')) {
             finalHtml = finalHtml.replace('</body>', `${entryScript}\n</body>`)
           } else {
             finalHtml += `\n${entryScript}`
           }
+        }
+
+        // 处理HTML中的静态资源路径 - 只在使用了 outputDir 且页面在子目录时才处理
+        if (outputDir && page.filename.includes('/')) {
+          const pageDepth = page.filename.split('/').length - 1
+          const relativePath = pageDepth > 0 ? '../'.repeat(pageDepth) : './'
+
+          // 替换绝对路径的静态资源引用
+          finalHtml = finalHtml
+            .replace(/src=["']\/([^"']+)["']/g, `src="${relativePath}$1"`)
+            .replace(/href=["']\/([^"']+)["']/g, `href="${relativePath}$1"`)
+            .replace(/url\(["']?\/([^"')]+)["']?\)/g, `url(${relativePath}$1)`)
         }
 
         const tempFile = resolve(tempDir, page.filename)
@@ -449,9 +496,9 @@ export function viteMpa(options = {}) {
         for (const transformer of viteConfig.__htmlTransforms) {
           try {
             html = await transformer.transform(html, {
-              server: devServer,     
-              config: viteConfig,   
-              page: page  
+              server: devServer,
+              config: viteConfig,
+              page: page
             });
           } catch (error) {
             console.error(`Error in ${transformer.name}:`, error);
@@ -501,11 +548,16 @@ export function viteMpa(options = {}) {
         log.warn(`Template file not found: ${templatePath}`)
       }
 
-      pages = await scanPages(config.root)
+      pages = await scanPages(config.root, config.command === 'build')
       log.info(`Found ${Object.keys(pages).length} pages`)
 
       if (config.command === 'serve') {
         log.info(`Development mode: using virtual routing for ${Object.keys(pages).length} pages`)
+        if (outputDir) {
+          log.info(`outputDir configuration will be ignored in development mode`)
+        }
+      } else if (config.command === 'build' && outputDir) {
+        log.info(`Build mode: outputDir configuration will be applied`)
       }
 
       templateCache.clear()
@@ -520,7 +572,7 @@ export function viteMpa(options = {}) {
       if (command === 'build') {
         log.info(`Build command detected, creating temp HTML files in ${root}`)
 
-        const scannedPages = await scanPages(root)
+        const scannedPages = await scanPages(root, true)
         const inputs = await createTempHtmlFiles(scannedPages, root)
         const inputCount = Object.keys(inputs).length
 
@@ -595,11 +647,11 @@ export function viteMpa(options = {}) {
         for (const [name, page] of Object.entries(pages)) {
           if (!name) continue
 
+          // 在开发模式下，只使用页面名称进行路由匹配，忽略 outputDir 配置
           if (urlPath === `/${name}` ||
-              urlPath === `/${name}/` ||
-              urlPath === `/${name}.html` ||
-              urlPath === `/${name}/index.html` ||
-              urlPath === `/${page.filename}`) {
+            urlPath === `/${name}/` ||
+            urlPath === `/${name}.html` ||
+            urlPath === `/${name}/index.html`) {
             matchedPage = page
             pageName = name
             break
@@ -697,37 +749,57 @@ export function viteMpa(options = {}) {
 
       if (viteConfig && viteConfig.command === 'build') {
         const outDir = viteConfig.build?.outDir || 'dist'
-        const outputDir = resolve(viteConfig.root, outDir)
-        const tempDir = resolve(outDir, '.mpa-temp')
+        const outputDirPath = resolve(viteConfig.root, outDir)
+        const tempDir = resolve(viteConfig.root, '.mpa-temp')
 
-        log.info(`Copying HTML files from ${tempDir} to ${outputDir}`)
+        log.info(`Processing HTML files from ${tempDir} to ${outputDirPath}`)
 
         try {
-          if (!existsSync(outputDir)) {
-            await fs.mkdir(outputDir, { recursive: true })
+          if (!existsSync(outputDirPath)) {
+            await fs.mkdir(outputDirPath, { recursive: true })
           }
 
-          const files = await fs.readdir(tempDir, { recursive: true })
+          // 处理每个页面的HTML文件
+          for (const [pageName, page] of Object.entries(pages)) {
+            const tempFile = resolve(tempDir, page.filename)
+            const targetFile = resolve(outputDirPath, page.filename)
 
-          for (const file of files) {
-            if (file.endsWith('.html')) {
-              const sourcePath = resolve(tempDir, file)
-              const targetPath = resolve(outputDir, file)
-              const targetDir = dirname(targetPath)
+            if (existsSync(tempFile)) {
+              const targetDir = dirname(targetFile)
               if (!existsSync(targetDir)) {
                 await fs.mkdir(targetDir, { recursive: true })
+                log.debug(`Created directory: ${targetDir}`)
               }
 
-              log.info(`Copying ${sourcePath} to ${targetPath}`)
-              await fs.copyFile(sourcePath, targetPath)
+              // 读取临时文件内容
+              let htmlContent = await fs.readFile(tempFile, 'utf-8')
+
+              // 如果使用了自定义输出目录，需要调整资源路径
+              if (outputDir && page.filename.includes('/')) {
+                const pageDepth = page.filename.split('/').length - 1
+                const relativePath = pageDepth > 0 ? '../'.repeat(pageDepth) : './'
+
+                // 调整构建后的资源路径
+                htmlContent = htmlContent
+                  .replace(/src=["']\.\/([^"']+)["']/g, `src="${relativePath}$1"`)
+                  .replace(/href=["']\.\/([^"']+)["']/g, `href="${relativePath}$1"`)
+                  .replace(/src=["']([^"'\/][^"']*)["']/g, `src="${relativePath}$1"`)
+                  .replace(/href=["']([^"'\/][^"']*)["']/g, `href="${relativePath}$1"`)
+              }
+
+              await fs.writeFile(targetFile, htmlContent)
+              log.info(`Processed HTML file: ${pageName} -> ${page.filename}`)
             }
           }
 
-          log.success(`HTML files copied to ${outputDir}`)
+          log.success(`HTML files processed and copied to ${outputDirPath}`)
 
-          log.info(`Removing temp directory from build output: ${tempDir}`)
-          await fs.rm(tempDir, { recursive: true, force: true })
-          log.success(`Removed temp directory from build output`)
+          // 清理临时目录
+          if (existsSync(tempDir)) {
+            log.info(`Removing temp directory: ${tempDir}`)
+            await fs.rm(tempDir, { recursive: true, force: true })
+            log.success(`Removed temp directory`)
+          }
         } catch (err) {
           log.error(`Failed to process output files: ${err.message}`)
         }
