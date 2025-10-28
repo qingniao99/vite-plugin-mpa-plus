@@ -755,10 +755,11 @@ export function viteMpa(options = {}) {
         log.info(`Processing HTML files in output directory: ${outputDirPath}`)
 
         try {
-          const tempDirInOutput = resolve(outputDirPath, 'node_modules', '.mpa-temp')
+          const nodeModulesInOutput = resolve(outputDirPath, 'node_modules')
+          const tempDirInOutput = resolve(nodeModulesInOutput, '.mpa-temp')
 
           if (existsSync(tempDirInOutput)) {
-            log.info('Found .mpa-temp directory in output, moving files to correct locations')
+            log.info('Found .mpa-temp directory in output node_modules, moving files to correct locations')
 
             const moveFiles = async (sourceDir, targetDir) => {
               const entries = await fs.readdir(sourceDir, { withFileTypes: true })
@@ -788,8 +789,42 @@ export function viteMpa(options = {}) {
 
             await moveFiles(tempDirInOutput, outputDirPath)
 
-            await fs.rm(tempDirInOutput, { recursive: true, force: true })
-            log.success('Successfully moved all files from .mpa-temp to correct locations')
+            if (existsSync(nodeModulesInOutput)) {
+              await fs.rm(nodeModulesInOutput, { recursive: true, force: true })
+              log.success('Successfully moved all files and removed node_modules directory from output')
+            }
+          } else {
+            const directTempDir = resolve(outputDirPath, '.mpa-temp')
+            if (existsSync(directTempDir)) {
+              log.info('Found .mpa-temp directory in output root, moving files to correct locations')
+
+              const moveFiles = async (sourceDir, targetDir) => {
+                const entries = await fs.readdir(sourceDir, { withFileTypes: true })
+
+                for (const entry of entries) {
+                  const sourcePath = resolve(sourceDir, entry.name)
+                  const targetPath = resolve(targetDir, entry.name)
+
+                  if (entry.isDirectory()) {
+                    if (!existsSync(targetPath)) {
+                      await fs.mkdir(targetPath, { recursive: true })
+                    }
+                    await moveFiles(sourcePath, targetPath)
+                  } else {
+                    const targetFileDir = dirname(targetPath)
+                    if (!existsSync(targetFileDir)) {
+                      await fs.mkdir(targetFileDir, { recursive: true })
+                    }
+                    await fs.rename(sourcePath, targetPath)
+                    log.debug(`Moved file: ${entry.name} to ${relative(outputDirPath, targetPath)}`)
+                  }
+                }
+              }
+
+              await moveFiles(directTempDir, outputDirPath)
+              await fs.rm(directTempDir, { recursive: true, force: true })
+              log.success('Successfully moved all files from .mpa-temp to correct locations')
+            }
           }
         } catch (err) {
           log.error(`Failed to process output files: ${err.message}`)
