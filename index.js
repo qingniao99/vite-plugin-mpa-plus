@@ -378,39 +378,20 @@ export function viteMpa(options = {}) {
         log.debug(`Compiling template for page: ${name}`)
         const html = await compileTemplate(templateContent, page.data)
 
-        // 使用与开发服务器相同的方式注入入口JS
+        // 注入入口JS - 使用绝对路径，让 Vite 自动处理相对路径转换
         let finalHtml = html
         if (page.entry) {
           const entryPath = normalizePath(relative(root, page.entry))
           log.debug(`Injecting entry script: ${entryPath} for page: ${name}`)
 
-          // 只有在使用了 outputDir 且页面在子目录时才计算相对路径
-          let entryScript
-          if (outputDir && page.filename.includes('/')) {
-            const pageDepth = page.filename.split('/').length - 1
-            const relativePath = pageDepth > 0 ? '../'.repeat(pageDepth) : './'
-            entryScript = `<script type="module" src="${relativePath}${entryPath}"></script>`
-          } else {
-            entryScript = `<script type="module" src="/${entryPath}"></script>`
-          }
+          // 始终使用绝对路径，Vite 会根据 HTML 文件的位置自动转换为正确的相对路径
+          const entryScript = `<script type="module" src="/${entryPath}"></script>`
 
           if (finalHtml.includes('</body>')) {
             finalHtml = finalHtml.replace('</body>', `${entryScript}\n</body>`)
           } else {
             finalHtml += `\n${entryScript}`
           }
-        }
-
-        // 处理HTML中的静态资源路径 - 只在使用了 outputDir 且页面在子目录时才处理
-        if (outputDir && page.filename.includes('/')) {
-          const pageDepth = page.filename.split('/').length - 1
-          const relativePath = pageDepth > 0 ? '../'.repeat(pageDepth) : './'
-
-          // 替换绝对路径的静态资源引用
-          finalHtml = finalHtml
-            .replace(/src=["']\/([^"']+)["']/g, `src="${relativePath}$1"`)
-            .replace(/href=["']\/([^"']+)["']/g, `href="${relativePath}$1"`)
-            .replace(/url\(["']?\/([^"')]+)["']?\)/g, `url(${relativePath}$1)`)
         }
 
         const tempFile = resolve(tempDir, page.filename)
@@ -469,6 +450,37 @@ export function viteMpa(options = {}) {
   }
 
 
+  /**
+   * 应用 HTML 转换器
+   * @param {string} html HTML 内容
+   * @param {Object} page 页面信息
+   * @param {string} pageName 页面名称
+   * @param {boolean} isBuildMode 是否为构建模式
+   * @returns {Promise<string>} 转换后的 HTML
+   */
+  async function applyHtmlTransforms(html, page, pageName = '', isBuildMode = false) {
+    if (viteConfig && viteConfig.__htmlTransforms) {
+      log.debug(`Applying ${viteConfig.__htmlTransforms.length} HTML transforms for ${pageName || 'page'}`)
+
+      for (const transformer of viteConfig.__htmlTransforms) {
+        try {
+          html = await transformer.transform(html, {
+            server: isBuildMode ? null : devServer,
+            config: viteConfig,
+            page: page,
+            filename: page.filename,
+            pageName: pageName,
+            isBuildMode: isBuildMode
+          });
+          log.debug(`Applied transformer: ${transformer.name || 'unnamed'} for ${pageName || 'page'}`)
+        } catch (error) {
+          log.error(`Error in transformer ${transformer.name || 'unnamed'} for ${pageName || 'page'}:`, error);
+        }
+      }
+    }
+    return html
+  }
+
   async function generatePageHtml(page) {
     try {
       // 获取模板内容
@@ -492,19 +504,8 @@ export function viteMpa(options = {}) {
       // 编译模板
       let html = await compileTemplate(templateContent, page.data)
 
-      if (viteConfig && viteConfig.__htmlTransforms) {
-        for (const transformer of viteConfig.__htmlTransforms) {
-          try {
-            html = await transformer.transform(html, {
-              server: devServer,
-              config: viteConfig,
-              page: page
-            });
-          } catch (error) {
-            console.error(`Error in ${transformer.name}:`, error);
-          }
-        }
-      }
+      // 应用 HTML 转换器（开发模式）
+      html = await applyHtmlTransforms(html, page, page.name, false)
 
       return html
     } catch (err) {
@@ -617,6 +618,7 @@ export function viteMpa(options = {}) {
         pages = scannedPages
 
         log.info(`Build config created with ${inputCount} inputs: ${Object.keys(inputs).join(', ')}`)
+
         return {
           build: {
             rollupOptions: {
@@ -647,7 +649,6 @@ export function viteMpa(options = {}) {
         for (const [name, page] of Object.entries(pages)) {
           if (!name) continue
 
-          // 在开发模式下，只使用页面名称进行路由匹配，忽略 outputDir 配置
           if (urlPath === `/${name}` ||
             urlPath === `/${name}/` ||
             urlPath === `/${name}.html` ||
@@ -750,55 +751,45 @@ export function viteMpa(options = {}) {
       if (viteConfig && viteConfig.command === 'build') {
         const outDir = viteConfig.build?.outDir || 'dist'
         const outputDirPath = resolve(viteConfig.root, outDir)
-        const tempDir = resolve(viteConfig.root, '.mpa-temp')
 
-        log.info(`Processing HTML files from ${tempDir} to ${outputDirPath}`)
+        log.info(`Processing HTML files in output directory: ${outputDirPath}`)
 
         try {
-          if (!existsSync(outputDirPath)) {
-            await fs.mkdir(outputDirPath, { recursive: true })
-          }
+          const tempDirInOutput = resolve(outputDirPath, '.mpa-temp')
 
-          // 处理每个页面的HTML文件
-          for (const [pageName, page] of Object.entries(pages)) {
-            const tempFile = resolve(tempDir, page.filename)
-            const targetFile = resolve(outputDirPath, page.filename)
+          if (existsSync(tempDirInOutput)) {
+            log.info('Found .mpa-temp directory in output, moving files to correct locations')
 
-            if (existsSync(tempFile)) {
-              const targetDir = dirname(targetFile)
-              if (!existsSync(targetDir)) {
-                await fs.mkdir(targetDir, { recursive: true })
-                log.debug(`Created directory: ${targetDir}`)
+            const moveFiles = async (sourceDir, targetDir) => {
+              const entries = await fs.readdir(sourceDir, { withFileTypes: true })
+
+              for (const entry of entries) {
+                const sourcePath = resolve(sourceDir, entry.name)
+                const targetPath = resolve(targetDir, entry.name)
+
+                if (entry.isDirectory()) {
+                  // 创建目标目录
+                  if (!existsSync(targetPath)) {
+                    await fs.mkdir(targetPath, { recursive: true })
+                  }
+                  // 递归移动子目录
+                  await moveFiles(sourcePath, targetPath)
+                } else {
+                  // 移动文件
+                  const targetFileDir = dirname(targetPath)
+                  if (!existsSync(targetFileDir)) {
+                    await fs.mkdir(targetFileDir, { recursive: true })
+                  }
+                  await fs.rename(sourcePath, targetPath)
+                  log.debug(`Moved file: ${entry.name} to ${relative(outputDirPath, targetPath)}`)
+                }
               }
-
-              // 读取临时文件内容
-              let htmlContent = await fs.readFile(tempFile, 'utf-8')
-
-              // 如果使用了自定义输出目录，需要调整资源路径
-              if (outputDir && page.filename.includes('/')) {
-                const pageDepth = page.filename.split('/').length - 1
-                const relativePath = pageDepth > 0 ? '../'.repeat(pageDepth) : './'
-
-                // 调整构建后的资源路径
-                htmlContent = htmlContent
-                  .replace(/src=["']\.\/([^"']+)["']/g, `src="${relativePath}$1"`)
-                  .replace(/href=["']\.\/([^"']+)["']/g, `href="${relativePath}$1"`)
-                  .replace(/src=["']([^"'\/][^"']*)["']/g, `src="${relativePath}$1"`)
-                  .replace(/href=["']([^"'\/][^"']*)["']/g, `href="${relativePath}$1"`)
-              }
-
-              await fs.writeFile(targetFile, htmlContent)
-              log.info(`Processed HTML file: ${pageName} -> ${page.filename}`)
             }
-          }
 
-          log.success(`HTML files processed and copied to ${outputDirPath}`)
+            await moveFiles(tempDirInOutput, outputDirPath)
 
-          // 清理临时目录
-          if (existsSync(tempDir)) {
-            log.info(`Removing temp directory: ${tempDir}`)
-            await fs.rm(tempDir, { recursive: true, force: true })
-            log.success(`Removed temp directory`)
+            await fs.rm(tempDirInOutput, { recursive: true, force: true })
+            log.success('Successfully moved all files from .mpa-temp to correct locations')
           }
         } catch (err) {
           log.error(`Failed to process output files: ${err.message}`)

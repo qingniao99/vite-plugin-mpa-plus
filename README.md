@@ -14,6 +14,7 @@
 - ✨ **EJS模板引擎** - 支持动态模板渲染
 - 📝 **详细日志系统** - 可配置的详细调试输出
 - 🚀 **页面信息注入** - 可将页面入口文件的兄弟info.json注入到模板中
+- 📁 **自定义输出结构** - 支持自定义页面输出目录和文件名
 
 ## 安装
 
@@ -120,20 +121,25 @@ dist/
 
 ### 自定义输出目录 (outputDir)
 
-使用 `outputDir` 配置可以自定义页面的输出目录结构：
+使用 `outputDir` 配置可以自定义页面的输出目录结构和文件名：
 
 #### 字符串模板方式
 
 ```javascript
 mpa({
+  // 基本目录结构
   outputDir: 'pages/{name}', // 所有页面放在 pages 目录下
-  // 或指定具体文件名
+  
+  // 指定具体文件名
   outputDir: '{name}/index', // home.html -> home/index.html
-  outputDir: '{basename}/main' // user/profile.html -> profile/main.html
+  outputDir: '{basename}/main', // user/profile.html -> profile/main.html
+  
+  // 复杂的目录和文件名组合
+  outputDir: 'pages/{dir}/{basename}/content' // user/profile.html -> pages/user/profile/content.html
 })
 ```
 
-支持的模板变量：
+**支持的模板变量**：
 - `{name}`: 完整页面名称 (如 `user/profile`)
 - `{dir}`: 页面目录 (如 `user`)  
 - `{basename}`: 页面基础名称 (如 `profile`)
@@ -143,34 +149,103 @@ mpa({
 ```javascript
 mpa({
   outputDir: (pageName, pageInfo) => {
-    if (pageName === 'home') {
-      return 'home/index' // home.html -> home/index.html
+    // 首页保持简单结构
+    if (pageName === 'index') {
+      return 'index'
     }
+    
+    // 管理页面使用特殊结构
     if (pageName.startsWith('admin/')) {
-      return `admin/${pageName.replace('admin/', '')}/main`
+      return `admin/${pageName.replace('admin/', '')}/index`
     }
+    
+    // 用户页面使用不同文件名
+    if (pageName.startsWith('user/')) {
+      return `${pageName}/main`
+    }
+    
+    // 其他页面放在 pages 目录
     return `pages/${pageName}`
   }
 })
 ```
 
+**函数参数**：
+- `pageName`: 页面名称（如 `user/profile`）
+- `pageInfo`: 页面信息对象，包含 `entry`、`template`、`data` 等属性
+
 #### 输出示例
 
-使用 `outputDir: 'pages/{name}'` 的构建输出：
-
+**使用 `outputDir: 'pages/{name}'`**：
 ```
 dist/
-  pages/
-    index.html
-    about.html
-    blog/
-      post.html
+├── pages/
+│   ├── index.html
+│   ├── about.html
+│   └── user/
+│       ├── profile.html
+│       └── settings.html
+└── assets/
+    └── ...
 ```
 
-**注意**: 
-- `outputDir` 配置只在构建模式下生效，开发模式下会被忽略
-- 插件会自动处理静态资源路径，确保在自定义目录结构下资源引用正常工作
-- 开发服务器仍然使用原始的页面路由（如 `/user/profile`）
+**使用 `outputDir: '{name}/index'`**：
+```
+dist/
+├── index/
+│   └── index.html
+├── about/
+│   └── index.html
+├── user/
+│   ├── profile/
+│   │   └── index.html
+│   └── settings/
+│       └── index.html
+└── assets/
+    └── ...
+```
+
+**使用函数自定义**：
+```javascript
+outputDir: (pageName) => {
+  if (pageName === 'home') return 'home/main'
+  if (pageName.startsWith('api/')) return `docs/api/${pageName.replace('api/', '')}/reference`
+  return `${pageName}/index`
+}
+```
+
+#### 实际应用场景
+
+**SPA 风格目录结构**：
+```javascript
+outputDir: '{name}/index' // 每个页面都有自己的目录
+```
+
+**按功能模块组织**：
+```javascript
+outputDir: (pageName) => {
+  if (pageName.startsWith('docs/')) return `documentation/${pageName.replace('docs/', '')}/index`
+  if (pageName.startsWith('blog/')) return `blog/${pageName.replace('blog/', '')}/post`
+  return `${pageName}/index`
+}
+```
+
+**多语言站点**：
+```javascript
+outputDir: (pageName, pageInfo) => {
+  const lang = pageInfo.data?.lang || 'en'
+  return `${lang}/${pageName}/index`
+}
+```
+
+#### 注意事项
+
+- **仅构建模式生效**: `outputDir` 配置只在 `vite build` 时生效，开发模式下会被忽略
+- **自动扩展名**: 如果路径不以 `.html` 结尾，会自动添加 `.html` 扩展名
+- **目录创建**: 插件会自动创建必要的目录结构
+- **资源路径**: Vite 会自动处理静态资源路径，确保在自定义目录结构下资源引用正常工作
+- **开发服务器**: 开发模式下仍然使用原始的页面路由（如 `/user/profile`）
+- **插件兼容**: 与其他插件完全兼容，无需额外配置
 
 ## 高级用法
 
